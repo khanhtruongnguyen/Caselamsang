@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ Thống Giả Lập Lâm Sàng - Clinical Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        .emr-card {
+            background: white;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+            border-top: 4px solid #0ea5e9;
+        }
+        .markdown-body h1 { font-size: 1.4rem; font-weight: 700; margin-top: 1.25rem; margin-bottom: 0.5rem; color: #1e293b; }
+        .markdown-body h2 { font-size: 1.2rem; font-weight: 700; margin-top: 1.25rem; margin-bottom: 0.5rem; color: #1e293b; }
+        .markdown-body h3 { font-size: 1.05rem; font-weight: 600; margin-top: 1rem; margin-bottom: 0.4rem; color: #1e293b; }
+        .markdown-body p { margin-bottom: 0.7rem; color: #334155; line-height: 1.7; }
+        .markdown-body ul { list-style-type: disc; padding-left: 1.5rem; margin-bottom: 0.9rem; color: #334155; }
+        .markdown-body ol { list-style-type: decimal; padding-left: 1.5rem; margin-bottom: 0.9rem; color: #334155; }
+        .markdown-body li { margin-bottom: 0.3rem; line-height: 1.65; }
+        .markdown-body strong { color: #0f172a; font-weight: 600; }
+        .markdown-body em { color: #475569; }
+        .markdown-body hr { border-color: #e2e8f0; margin: 1rem 0; }
+        .markdown-body blockquote { border-left: 3px solid #0ea5e9; padding-left: 0.9rem; color: #475569; margin: 0.75rem 0; font-style: italic; }
+        .spinner {
+            border: 3px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top: 3px solid white;
+            width: 18px; height: 18px;
+            animation: spin 0.8s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin { 0%{ transform:rotate(0deg); } 100%{ transform:rotate(360deg); } }
+        .topic-btn { transition: all 0.15s ease; }
+        .topic-btn:hover:not(.active) { transform: translateY(-1px); background-color: #e2e8f0; }
+        .topic-btn.active { background-color: #0284c7 !important; color: white !important; border-color: #0284c7 !important; box-shadow: 0 2px 8px rgba(2,132,199,0.35); }
+        .diff-btn { transition: all 0.15s ease; }
+        .diff-btn:hover { transform: translateY(-1px); }
+        #followup-history > div:not(:last-child) { border-bottom: 1px solid #f1f5f9; }
+    </style>
+</head>
+<body class="text-slate-800 antialiased h-screen flex flex-col overflow-hidden">
+
+    <!-- Navbar -->
+    <nav class="bg-slate-900 text-white px-5 py-3.5 shadow-md flex justify-between items-center z-10">
+        <div class="flex items-center space-x-3">
+            <i class="fas fa-notes-medical text-sky-400 text-xl"></i>
+            <h1 class="text-lg font-bold tracking-wide">MedSim <span class="font-normal text-sky-300">Pro</span></h1>
+        </div>
+        <div class="text-sm text-slate-300 flex items-center space-x-4">
+            <span class="hidden sm:inline"><i class="fas fa-user-md mr-1"></i> Bác sĩ nội trú ảo</span>
+            <button id="btn-new-case-nav" class="bg-sky-600 hover:bg-sky-500 text-white px-4 py-2 rounded-md font-medium transition-colors flex items-center shadow-sm">
+                <i class="fas fa-redo mr-2"></i> Ca Mới
+            </button>
+        </div>
+    </nav>
+
+    <!-- Main -->
+    <main class="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 flex flex-col lg:flex-row gap-6">
+
+        <!-- ===== LEFT COLUMN ===== -->
+        <div class="w-full lg:w-1/2 flex flex-col gap-6">
+
+            <!-- Welcome / Config State -->
+            <div id="welcome-state" class="emr-card p-6 flex flex-col gap-5">
+
+                <!-- Header -->
+                <div class="text-center pb-1">
+                    <div class="w-14 h-14 bg-sky-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <i class="fas fa-stethoscope text-2xl text-sky-600"></i>
+                    </div>
+                    <h2 class="text-lg font-bold text-slate-700">Clinical Simulator</h2>
+                    <p class="text-slate-500 text-xs mt-1">Chọn chuyên khoa &amp; độ khó, rồi bắt đầu khám bệnh.</p>
+                </div>
+
+                <!-- Topic Grid -->
+                <div>
+                    <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                        <i class="fas fa-hospital-alt mr-1 text-sky-500"></i> Chuyên khoa
+                    </p>
+                    <div class="grid grid-cols-3 gap-1.5" id="topic-grid"></div>
+                    <div id="custom-topic-area" class="hidden mt-2.5">
+                        <input id="custom-topic-input" type="text"
+                            class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500 text-slate-700"
+                            placeholder="VD: Da liễu, Cơ xương khớp, Tâm thần...">
+                    </div>
+                </div>
+
+                <!-- Difficulty -->
+                <div>
+                    <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                        <i class="fas fa-signal mr-1 text-sky-500"></i> Độ khó
+                    </p>
+                    <div class="grid grid-cols-4 gap-1.5" id="difficulty-grid"></div>
+                    <div id="difficulty-desc" class="mt-2 p-2.5 bg-slate-50 rounded-lg text-xs text-slate-500 min-h-[38px] leading-relaxed"></div>
+                </div>
+
+                <!-- Start -->
+                <button id="btn-start" class="w-full bg-sky-600 hover:bg-sky-700 active:scale-95 text-white py-3 rounded-lg font-semibold transition-all shadow-md flex items-center justify-center gap-2">
+                    <span id="start-text"><i class="fas fa-play mr-1"></i> Bắt đầu khám bệnh</span>
+                    <div id="start-spinner" class="spinner hidden"></div>
+                </button>
+            </div>
+
+            <!-- Patient Record -->
+            <div id="patient-record" class="hidden flex flex-col gap-4">
+                <div class="flex items-center justify-between border-b pb-2">
+                    <h2 class="text-lg font-bold text-slate-800 flex items-center">
+                        <i class="fas fa-clipboard-user text-sky-600 mr-2"></i> Hồ Sơ Bệnh Án
+                    </h2>
+                    <div class="flex items-center gap-1.5 flex-wrap justify-end">
+                        <span id="badge-topic" class="bg-sky-100 text-sky-700 text-xs px-2 py-0.5 rounded-full font-medium"></span>
+                        <span id="badge-diff"  class="text-xs px-2 py-0.5 rounded-full font-medium"></span>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg p-4 shadow-sm border border-slate-200 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                    <div><span class="text-slate-400 block text-xs uppercase tracking-wider">Họ và tên</span><span id="pt-name" class="font-semibold text-slate-800">-</span></div>
+                    <div><span class="text-slate-400 block text-xs uppercase tracking-wider">Tuổi</span><span id="pt-age" class="font-semibold text-slate-800">-</span></div>
+                    <div><span class="text-slate-400 block text-xs uppercase tracking-wider">Giới tính</span><span id="pt-gender" class="font-semibold text-slate-800">-</span></div>
+                    <div><span class="text-slate-400 block text-xs uppercase tracking-wider">Nghề nghiệp</span><span id="pt-job" class="font-semibold text-slate-800">-</span></div>
+                </div>
+
+                <div class="bg-white rounded-lg p-5 shadow-sm border border-slate-200 space-y-4 text-sm">
+                    <div>
+                        <h4 class="font-semibold text-rose-600 flex items-center text-sm"><i class="fas fa-exclamation-circle mr-2"></i> Lý do vào viện</h4>
+                        <p id="pt-reason" class="text-slate-700 mt-1.5 pl-6">-</p>
+                    </div>
+                    <hr class="border-slate-100">
+                    <div>
+                        <h4 class="font-semibold text-slate-700 flex items-center text-sm"><i class="fas fa-history mr-2 text-sky-500"></i> Bệnh sử</h4>
+                        <p id="pt-history" class="text-slate-700 mt-1.5 pl-6 leading-relaxed whitespace-pre-wrap">-</p>
+                    </div>
+                    <hr class="border-slate-100">
+                    <div>
+                        <h4 class="font-semibold text-slate-700 flex items-center text-sm"><i class="fas fa-file-medical mr-2 text-sky-500"></i> Tiền sử</h4>
+                        <p id="pt-past" class="text-slate-700 mt-1.5 pl-6">-</p>
+                    </div>
+                    <hr class="border-slate-100">
+                    <div>
+                        <h4 class="font-semibold text-slate-700 flex items-center text-sm"><i class="fas fa-heartbeat mr-2 text-sky-500"></i> Khám lâm sàng</h4>
+                        <p id="pt-exam" class="text-slate-700 mt-1.5 pl-6 leading-relaxed whitespace-pre-wrap">-</p>
+                    </div>
+                    <hr class="border-slate-100">
+                    <div>
+                        <h4 class="font-semibold text-slate-700 flex items-center text-sm"><i class="fas fa-flask mr-2 text-sky-500"></i> Cận lâm sàng cơ bản có sẵn</h4>
+                        <p id="pt-labs" class="text-slate-700 mt-1.5 pl-6 leading-relaxed whitespace-pre-wrap">-</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== RIGHT COLUMN ===== -->
+        <div class="w-full lg:w-1/2 flex flex-col gap-6">
+
+            <!-- Doctor Workspace -->
+            <div id="doctor-workspace" class="emr-card p-5 flex flex-col opacity-50 pointer-events-none transition-opacity duration-300">
+                <h3 class="text-base font-bold text-slate-800 mb-2 flex items-center">
+                    <i class="fas fa-user-md text-sky-600 mr-2"></i> Phân tích &amp; Hướng xử lý
+                </h3>
+                <p class="text-xs text-slate-500 mb-3">Nhập chẩn đoán sơ bộ, xét nghiệm cần chỉ định, và phác đồ điều trị dự kiến.</p>
+                <textarea id="doctor-input"
+                    class="w-full min-h-[220px] p-4 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 resize-y text-slate-700 placeholder-slate-400 text-sm"
+                    placeholder="- Chẩn đoán sơ bộ: ...&#10;- Chẩn đoán phân biệt: ...&#10;- Cận lâm sàng đề nghị: ...&#10;- Hướng điều trị ban đầu: ..."></textarea>
+                <div class="mt-3 flex justify-end">
+                    <button id="btn-submit" class="bg-teal-600 hover:bg-teal-500 active:scale-95 text-white px-5 py-2.5 rounded-lg font-medium transition-all flex items-center gap-2 shadow-sm">
+                        <span id="submit-text"><i class="fas fa-paper-plane mr-1"></i> Gửi đánh giá</span>
+                        <div id="submit-spinner" class="spinner hidden"></div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Evaluation Result -->
+            <div id="evaluation-result" class="emr-card p-0 hidden flex-col border-t-4 border-t-emerald-500">
+                <div class="bg-emerald-50 p-4 border-b border-emerald-100">
+                    <h3 class="font-bold text-emerald-800 flex items-center text-base">
+                        <i class="fas fa-check-circle mr-2"></i> Đánh Giá Chuyên Gia (AI)
+                    </h3>
+                </div>
+                <div id="evaluation-content" class="p-5 markdown-body bg-white text-sm"></div>
+            </div>
+
+            <!-- Follow-up Q&A -->
+            <div id="followup-section" class="hidden emr-card p-0 flex-col border-t-4 border-t-violet-500">
+                <div class="bg-violet-50 px-4 py-3 border-b border-violet-100 flex items-center justify-between">
+                    <h3 class="font-bold text-violet-800 flex items-center text-sm">
+                        <i class="fas fa-comments mr-2"></i> Hỏi thêm Giáo sư
+                    </h3>
+                    <span id="questions-counter" class="text-xs font-bold px-2.5 py-1 rounded-full bg-violet-200 text-violet-800"></span>
+                </div>
+
+                <!-- Q&A pairs rendered here -->
+                <div id="followup-history" class="bg-white"></div>
+
+                <!-- Input area -->
+                <div id="followup-input-area" class="p-4 bg-slate-50 border-t border-slate-100">
+                    <p class="text-xs text-slate-400 mb-2 italic">
+                        <i class="fas fa-info-circle mr-1"></i> Tối đa 3 câu hỏi mỗi ca. Nhấn Ctrl+Enter để gửi nhanh.
+                    </p>
+                    <div class="flex gap-2 items-end">
+                        <textarea id="followup-input"
+                            class="flex-1 min-h-[72px] p-3 bg-white border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-violet-500 focus:border-violet-500 resize-none text-slate-700 placeholder-slate-400"
+                            placeholder="Thưa Giáo sư, tôi muốn hỏi thêm về..."></textarea>
+                        <button id="btn-followup"
+                            class="bg-violet-600 hover:bg-violet-500 active:scale-95 text-white px-3 py-2.5 rounded-lg font-medium transition-all shadow-sm flex flex-col items-center justify-center gap-1 min-w-[52px] self-stretch">
+                            <i id="followup-icon" class="fas fa-paper-plane text-sm"></i>
+                            <div id="followup-spinner" class="spinner hidden"></div>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Exhausted -->
+                <div id="followup-exhausted" class="hidden px-4 py-3 bg-slate-50 border-t border-slate-200 text-center text-xs text-slate-500">
+                    <i class="fas fa-lock mr-1 text-slate-400"></i>
+                    Bạn đã dùng hết 3 câu hỏi cho ca này. Hãy bắt đầu ca mới để tiếp tục.
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Toast -->
+    <div id="toast" class="fixed bottom-4 right-4 bg-red-600 text-white px-5 py-3 rounded-lg shadow-lg transform translate-y-20 opacity-0 transition-all duration-300 z-50 flex items-center gap-3">
+        <i class="fas fa-exclamation-triangle"></i>
+        <span id="toast-message">Đã có lỗi xảy ra!</span>
+    </div>
+
+    <script>
+        // ===== API Configuration =====
+        const API_KEY      = "sk-6e5bd68e2310d13bcf3747838f1cf8138d68e14e318e4e7e68cfb62a30aff59b";
+        const API_BASE_URL = "https://api.xah.io/v1";
+        const API_MODEL    = "cuzem3/gemini-3.8-flash-high";
+
+        // ===== Data Definitions =====
+        const TOPICS = [
+            { id: 'random',      emoji: '🎲', label: 'Ngẫu nhiên',       prompt: 'bất kỳ chuyên khoa nào (ngẫu nhiên hoàn toàn)' },
+            { id: 'cardiology',  emoji: '❤️',  label: 'Tim mạch',         prompt: 'Tim mạch (Cardiology)' },
+            { id: 'respiratory', emoji: '🫁',  label: 'Hô hấp',           prompt: 'Hô hấp - Phổi (Pulmonology/Respiratory)' },
+            { id: 'neurology',   emoji: '🧠',  label: 'Thần kinh',        prompt: 'Thần kinh (Neurology)' },
+            { id: 'gastro',      emoji: '🍽️', label: 'Tiêu hóa',         prompt: 'Tiêu hóa - Gan mật (Gastroenterology/Hepatology)' },
+            { id: 'endocrine',   emoji: '💉',  label: 'Nội tiết',         prompt: 'Nội tiết - Chuyển hóa (Endocrinology/Metabolism)' },
+            { id: 'hematology',  emoji: '🩸',  label: 'Huyết học',        prompt: 'Huyết học - Ung thư máu (Hematology/Oncology)' },
+            { id: 'nephrology',  emoji: '🫘',  label: 'Thận - TN',        prompt: 'Thận - Tiết niệu (Nephrology/Urology)' },
+            { id: 'surgery',     emoji: '🔪',  label: 'Ngoại khoa',       prompt: 'Ngoại khoa tổng quát (General Surgery)' },
+            { id: 'pediatrics',  emoji: '👶',  label: 'Nhi khoa',         prompt: 'Nhi khoa (Pediatrics)' },
+            { id: 'obstetrics',  emoji: '🤰',  label: 'Sản - Phụ khoa',   prompt: 'Sản - Phụ khoa (Obstetrics & Gynecology)' },
+            { id: 'custom',      emoji: '✍️', label: 'Tùy chỉnh',        prompt: '' },
+        ];
+
+        const DIFFICULTIES = [
+            {
+                id: 'easy', label: 'Dễ', sub: 'Dưới Y4',
+                active: 'bg-green-500 text-white border-green-500 shadow',
+                idle:   'bg-green-50 text-green-700 border-green-200 hover:border-green-400',
+                badge:  'bg-green-100 text-green-700',
+                desc:   '🟢 Bệnh phổ thông, triệu chứng điển hình, bệnh đơn lẻ không có bệnh đi kèm phức tạp.',
+                prompt: `Độ khó: DỄ (dành cho sinh viên dưới Y4).
+• Chọn các bệnh thường gặp nhất trong thực hành lâm sàng tại Việt Nam.
+• Triệu chứng điển hình, rõ ràng, đặc hiệu, không có dấu hiệu đánh lạc hướng.
+• Bệnh đơn lẻ (KHÔNG có bệnh phối hợp).
+• Xét nghiệm cơ bản đủ để gợi ý hướng chẩn đoán.`
+            },
+            {
+                id: 'medium', label: 'Trung bình', sub: 'Y4',
+                active: 'bg-amber-500 text-white border-amber-500 shadow',
+                idle:   'bg-amber-50 text-amber-700 border-amber-200 hover:border-amber-400',
+                badge:  'bg-amber-100 text-amber-700',
+                desc:   '🟡 Bệnh thường gặp nhưng có 1-2 bệnh đi kèm hoặc biến chứng, một vài triệu chứng không điển hình.',
+                prompt: `Độ khó: TRUNG BÌNH (dành cho sinh viên Y4).
+• Bệnh thường gặp nhưng có 1-2 bệnh đi kèm (comorbidity) làm phức tạp thêm bức tranh lâm sàng.
+• Một vài triệu chứng không điển hình hoặc bị che lấp bởi bệnh kèm.
+• Đòi hỏi tư duy chẩn đoán phân biệt và xếp thứ tự ưu tiên.
+• Phù hợp với sinh viên Y4 nắm kiến thức lâm sàng cơ bản.`
+            },
+            {
+                id: 'hard', label: 'Khó', sub: 'Y6',
+                active: 'bg-orange-500 text-white border-orange-500 shadow',
+                idle:   'bg-orange-50 text-orange-700 border-orange-200 hover:border-orange-400',
+                badge:  'bg-orange-100 text-orange-700',
+                desc:   '🟠 Bệnh ít phổ biến hoặc biểu hiện không điển hình, có 2-3 bệnh phối hợp tương tác lẫn nhau.',
+                prompt: `Độ khó: KHÓ (dành cho sinh viên Y6/Bác sĩ nội trú).
+• Ưu tiên bệnh ít phổ biến HOẶC bệnh phổ thông nhưng biểu hiện không điển hình.
+• Có 2-3 bệnh phối hợp tương tác lẫn nhau, tạo ra bức tranh lâm sàng phức tạp.
+• Triệu chứng chồng chéo, có thể có "bẫy chẩn đoán" đánh lạc hướng.
+• Xét nghiệm có thể có kết quả bất thường theo nhiều hướng khác nhau.
+• Đòi hỏi bác sĩ nội trú có kinh nghiệm.`
+            },
+            {
+                id: 'expert', label: 'Cực khó', sub: 'Chuyên gia',
+                active: 'bg-red-600 text-white border-red-600 shadow',
+                idle:   'bg-red-50 text-red-700 border-red-200 hover:border-red-400',
+                badge:  'bg-red-100 text-red-700',
+                desc:   '🔴 Bệnh hiếm gặp hoặc cực kỳ phức tạp, 3+ bệnh đi kèm, nhiều bẫy chẩn đoán, đòi hỏi tư duy chuyên gia.',
+                prompt: `Độ khó: CỰC KHÓ (dành cho Bác sĩ chuyên khoa / Chuyên gia).
+• Chọn bệnh HIẾM GẶP, HOẶC bệnh phổ thông nhưng biểu hiện cực kỳ không điển hình với nhiều bẫy chẩn đoán.
+• Có từ 3 bệnh đi kèm trở lên, tương tác và che khuất lẫn nhau, tạo ra bức tranh lâm sàng hỗn độn.
+• Các triệu chứng chủ đạo có thể "đánh lạc hướng" ngay cả bác sĩ dày dạn kinh nghiệm.
+• Xét nghiệm có kết quả mâu thuẫn nhau, đòi hỏi diễn giải phức tạp và kiến thức chuyên sâu đa chuyên khoa.
+• Ca bệnh ở mức độ có thể xuất hiện trên tạp chí y học hoặc hội thảo chuyên gia quốc tế.`
+            },
+        ];
+
+        // ===== State =====
+        let selectedTopicId   = 'random';
+        let selectedDiffId    = 'medium';
+        let currentCaseData   = null;
+        let currentTopicData  = null;
+        let currentDiffData   = null;
+        let userDiagnosis     = '';
+        let initialEvaluation = '';
+        let followUpHistory   = [];
+        let followUpRemaining = 3;
+
+        // ===== DOM =====
+        const $  = id => document.getElementById(id);
+        const elBtnStart        = $('btn-start');
+        const elBtnNav          = $('btn-new-case-nav');
+        const elBtnSubmit       = $('btn-submit');
+        const elBtnFollowup     = $('btn-followup');
+        const elWelcome         = $('welcome-state');
+        const elPatient         = $('patient-record');
+        const elWorkspace       = $('doctor-workspace');
+        const elDoctorInput     = $('doctor-input');
+        const elEvalResult      = $('evaluation-result');
+        const elEvalContent     = $('evaluation-content');
+        const elFollowupSection = $('followup-section');
+        const elFollowupHistory = $('followup-history');
+        const elFollowupInput   = $('followup-input');
+        const elFollowupArea    = $('followup-input-area');
+        const elFollowupDone    = $('followup-exhausted');
+        const elQCounter        = $('questions-counter');
+
+        // ===== Toast =====
+        function showToast(msg) {
+            const t = $('toast');
+            $('toast-message').innerText = msg;
+            t.classList.remove('translate-y-20', 'opacity-0');
+            setTimeout(() => t.classList.add('translate-y-20', 'opacity-0'), 5000);
+        }
+
+        // ===== fetch with retry =====
+        async function fetchWithRetry(url, opts, tries = 3) {
+            for (let i = 0; i < tries; i++) {
+                try {
+                    const r = await fetch(url, opts);
+                    if (r.status === 429) {
+                        await new Promise(res => setTimeout(res, Math.pow(2, i) * 1000 + Math.random() * 500));
+                        continue;
+                    }
+                    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                    return await r.json();
+                } catch (e) {
+                    if (i === tries - 1) throw e;
+                    await new Promise(res => setTimeout(res, Math.pow(2, i) * 1000));
+                }
+            }
+        }
+
+        // ===== OpenAI-compat helper =====
+        function apiCall(messages, extra = {}) {
+            return fetchWithRetry(`${API_BASE_URL}/chat/completions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${API_KEY}` },
+                body: JSON.stringify({ model: API_MODEL, messages, ...extra })
+            });
+        }
+
+        // ===== Render Topics =====
+        function renderTopics() {
+            const grid = $('topic-grid');
+            grid.innerHTML = '';
+            TOPICS.forEach(t => {
+                const btn = document.createElement('button');
+                const isActive = t.id === selectedTopicId;
+                btn.className = `topic-btn text-xs font-medium px-2 py-2 rounded-lg border text-center leading-tight
+                    ${isActive ? 'active' : 'bg-slate-100 text-slate-700 border-slate-200'}`;
+                btn.innerHTML = `<span class="block text-base leading-none mb-0.5">${t.emoji}</span>${t.label}`;
+                btn.addEventListener('click', () => {
+                    selectedTopicId = t.id;
+                    renderTopics();
+                    $('custom-topic-area').classList.toggle('hidden', t.id !== 'custom');
+                });
+                grid.appendChild(btn);
+            });
+        }
+
+        // ===== Render Difficulties =====
+        function renderDifficulties() {
+            const grid = $('difficulty-grid');
+            grid.innerHTML = '';
+            DIFFICULTIES.forEach(d => {
+                const isActive = d.id === selectedDiffId;
+                const btn = document.createElement('button');
+                btn.className = `diff-btn text-center rounded-lg border px-1 py-2 font-medium transition-all
+                    ${isActive ? d.active : d.idle}`;
+                btn.innerHTML = `<div class="text-sm font-semibold">${d.label}</div><div class="text-xs opacity-80 mt-0.5">${d.sub}</div>`;
+                btn.addEventListener('click', () => {
+                    selectedDiffId = d.id;
+                    renderDifficulties();
+                    $('difficulty-desc').textContent = DIFFICULTIES.find(x => x.id === d.id).desc;
+                });
+                grid.appendChild(btn);
+            });
+            $('difficulty-desc').textContent = DIFFICULTIES.find(d => d.id === selectedDiffId).desc;
+        }
+
+        // ===== Generate Case =====
+        async function generateClinicalCase() {
+            const customText = $('custom-topic-input').value.trim();
+            if (selectedTopicId === 'custom' && !customText) {
+                showToast('Vui lòng nhập chủ đề tùy chỉnh!'); return;
+            }
+
+            // Loading UI
+            $('start-text').innerText = 'Đang tạo hồ sơ...';
+            $('start-spinner').classList.remove('hidden');
+            elBtnStart.disabled = true;
+            elBtnNav.disabled = true;
+
+            // Reset state
+            elEvalResult.classList.add('hidden');
+            elFollowupSection.classList.add('hidden');
+            elDoctorInput.value = '';
+            followUpHistory = [];
+            followUpRemaining = 3;
+            elFollowupHistory.innerHTML = '';
+            userDiagnosis = '';
+            initialEvaluation = '';
+
+            currentTopicData = TOPICS.find(t => t.id === selectedTopicId);
+            currentDiffData  = DIFFICULTIES.find(d => d.id === selectedDiffId);
+
+            const topicPrompt = selectedTopicId === 'custom'
+                ? `chủ đề do người dùng yêu cầu: "${customText}"`
+                : currentTopicData.prompt;
+
+            const sysPrompt = `Bạn là giáo sư y khoa giàu kinh nghiệm. Khi được yêu cầu tạo ca lâm sàng, hãy trả về MỘT ĐỐI TƯỢNG JSON HỢP LỆ DUY NHẤT (không kèm markdown hay text thừa) với chính xác các trường sau:
+{
+  "ten_benh_nhan": "Tên giả (VD: Nguyễn Văn A)",
+  "tuoi": <số nguyên>,
+  "gioi_tinh": "Nam hoặc Nữ",
+  "nghe_nghiep": "Nghề nghiệp cụ thể",
+  "ly_do_nhap_vien": "Triệu chứng chính khiến bệnh nhân đi khám",
+  "benh_su": "Diễn biến bệnh chi tiết từ khi khởi phát",
+  "tien_su": "Tiền sử bản thân và gia đình",
+  "kham_lam_sang": "Dấu hiệu sinh tồn (số liệu cụ thể) và thăm khám từng cơ quan",
+  "can_lam_sang_co_ban": "Kết quả xét nghiệm cơ bản có ngay lúc nhập viện, hoặc 'Chưa có'"
+}`;
+
+            const usrPrompt = `Tạo ca lâm sàng thực tế trong lĩnh vực: ${topicPrompt}.
+
+${currentDiffData.prompt}
+
+Yêu cầu bắt buộc:
+- Mô tả chi tiết, chính xác về mặt y khoa, sinh động như hồ sơ bệnh án thật.
+- TUYỆT ĐỐI KHÔNG đề cập đến chẩn đoán — chỉ cung cấp dữ kiện lâm sàng thuần túy.
+- Dấu hiệu sinh tồn phải có số liệu cụ thể (mạch, huyết áp, nhiệt độ, SpO₂, nhịp thở).
+- Trả về JSON theo đúng định dạng được hướng dẫn.`;
+
+            try {
+                const data = await apiCall(
+                    [{ role: 'system', content: sysPrompt }, { role: 'user', content: usrPrompt }],
+                    { temperature: 0.85, response_format: { type: 'json_object' } }
+                );
+                if (data.choices?.[0]?.message?.content) {
+                    currentCaseData = JSON.parse(data.choices[0].message.content);
+                    renderPatientCase();
+                } else throw new Error('Không nhận được dữ liệu hợp lệ từ API.');
+            } catch (e) {
+                console.error(e);
+                showToast('Lỗi khi tạo ca lâm sàng. Vui lòng thử lại.');
+            } finally {
+                $('start-text').innerHTML = '<i class="fas fa-play mr-1"></i> Bắt đầu khám bệnh';
+                $('start-spinner').classList.add('hidden');
+                elBtnStart.disabled = false;
+                elBtnNav.disabled = false;
+            }
+        }
+
+        // ===== Render Patient =====
+        function renderPatientCase() {
+            $('pt-name').innerText   = currentCaseData.ten_benh_nhan;
+            $('pt-age').innerText    = currentCaseData.tuoi;
+            $('pt-gender').innerText = currentCaseData.gioi_tinh;
+            $('pt-job').innerText    = currentCaseData.nghe_nghiep;
+            $('pt-reason').innerText  = currentCaseData.ly_do_nhap_vien;
+            $('pt-history').innerText = currentCaseData.benh_su;
+            $('pt-past').innerText    = currentCaseData.tien_su;
+            $('pt-exam').innerText    = currentCaseData.kham_lam_sang;
+            $('pt-labs').innerText    = currentCaseData.can_lam_sang_co_ban;
+
+            $('badge-topic').textContent = `${currentTopicData.emoji} ${currentTopicData.label}`;
+            const bd = $('badge-diff');
+            bd.textContent = `${currentDiffData.label} · ${currentDiffData.sub}`;
+            bd.className = `text-xs px-2 py-0.5 rounded-full font-medium ${currentDiffData.badge}`;
+
+            elWelcome.classList.add('hidden');
+            elPatient.classList.remove('hidden');
+            elWorkspace.classList.remove('opacity-50', 'pointer-events-none');
+            elDoctorInput.focus();
+        }
+
+        // ===== Submit Diagnosis =====
+        async function submitDiagnosis() {
+            const input = elDoctorInput.value.trim();
+            if (!input) { showToast('Vui lòng nhập chẩn đoán và hướng xử lý!'); return; }
+            if (!currentCaseData) { showToast('Vui lòng tạo ca lâm sàng trước!'); return; }
+
+            userDiagnosis = input;
+            $('submit-text').innerText = 'Đang phân tích...';
+            $('submit-spinner').classList.remove('hidden');
+            elBtnSubmit.disabled = true;
+            elDoctorInput.disabled = true;
+            elEvalResult.classList.add('hidden');
+            elFollowupSection.classList.add('hidden');
+
+            const sysPrompt = `Bạn là Giáo sư Y khoa đầu ngành (Senior Attending Physician) — người nổi tiếng NGHIÊM KHẮC, KHÔNG NHÂN NHƯỢNG và có chuẩn mực học thuật cao nhất. Bạn đang chấm bài làm của học viên.
+
+NGUYÊN TẮC CHẤM BÀI:
+• KHÔNG khen ngợi dễ dãi hay xã giao. Chỉ ghi nhận điều thực sự đúng.
+• Vạch trần MỌI sai lầm, thiếu sót, nguy hiểm tiềm ẩn — dù nhỏ nhất.
+• Nếu bài làm yếu, hãy nói thẳng. Không vòng vo. Không đường lối.
+• Độ khó ca bệnh: ${currentDiffData ? currentDiffData.label + ' (' + currentDiffData.sub + ')' : ''} — chấm điểm tương xứng.
+
+CẤU TRÚC PHẢN HỒI (Markdown):
+### 🏁 Nhận xét chung
+Đánh giá tổng thể (Xuất sắc / Tốt / Trung bình / Yếu / Rất yếu). Lý do ngắn gọn.
+
+### ✅ Điểm đáng ghi nhận
+Liệt kê những gì thực sự đúng. Nếu không có gì đáng khen → ghi rõ "Không có điểm đáng ghi nhận".
+
+### ❌ Sai lầm & Thiếu sót nghiêm trọng
+Liệt kê từng sai lầm, thiếu sót. Giải thích tại sao nguy hiểm. Không bỏ sót.
+
+### 🎯 Chẩn đoán chuẩn xác
+Chẩn đoán xác định + chẩn đoán phân biệt theo thứ tự ưu tiên, kèm lý luận lâm sàng.
+
+### 🔬 Cận lâm sàng Gold Standard
+Xét nghiệm/thăm dò cần thiết, theo thứ tự ưu tiên và lý do chỉ định.
+
+### 💊 Phác đồ xử lý tối ưu
+Điều trị ban đầu cụ thể (thuốc, liều, thủ thuật, hội chẩn chuyên khoa...).
+
+Dùng tiếng Việt, văn phong học thuật y khoa chuyên nghiệp, nghiêm túc.`;
+
+            const usrPrompt = `CA BỆNH:\n${JSON.stringify(currentCaseData, null, 2)}\n\nBÀI LÀM CỦA HỌC VIÊN:\n${input}\n\nHãy đánh giá toàn diện và khắt khe.`;
+
+            try {
+                const data = await apiCall(
+                    [{ role: 'system', content: sysPrompt }, { role: 'user', content: usrPrompt }],
+                    { temperature: 0.7 }
+                );
+                if (data.choices?.[0]?.message?.content) {
+                    initialEvaluation = data.choices[0].message.content;
+                    elEvalContent.innerHTML = marked.parse(initialEvaluation);
+                    elEvalResult.classList.remove('hidden');
+                    // Show follow-up
+                    followUpRemaining = 3;
+                    updateCounter();
+                    elFollowupHistory.innerHTML = '';
+                    elFollowupArea.classList.remove('hidden');
+                    elFollowupDone.classList.add('hidden');
+                    elFollowupSection.classList.remove('hidden');
+                    elEvalResult.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                } else throw new Error('Invalid evaluation response.');
+            } catch (e) {
+                console.error(e);
+                showToast('Lỗi khi kết nối với Giáo sư AI. Vui lòng thử lại.');
+            } finally {
+                $('submit-text').innerHTML = '<i class="fas fa-paper-plane mr-1"></i> Gửi đánh giá';
+                $('submit-spinner').classList.add('hidden');
+                elBtnSubmit.disabled = false;
+                elDoctorInput.disabled = false;
+            }
+        }
+
+        // ===== Counter =====
+        function updateCounter() {
+            elQCounter.textContent = `${followUpRemaining} câu còn lại`;
+            elQCounter.className = `text-xs font-bold px-2.5 py-1 rounded-full ${
+                followUpRemaining === 1 ? 'bg-red-200 text-red-800' :
+                followUpRemaining === 2 ? 'bg-amber-200 text-amber-800' :
+                                          'bg-violet-200 text-violet-800'
+            }`;
+        }
+
+        // ===== Submit Follow-up =====
+        async function submitFollowUp() {
+            const q = elFollowupInput.value.trim();
+            if (!q) { showToast('Vui lòng nhập câu hỏi!'); return; }
+            if (followUpRemaining <= 0) return;
+
+            $('followup-icon').className = '';
+            $('followup-spinner').classList.remove('hidden');
+            elBtnFollowup.disabled = true;
+            elFollowupInput.disabled = true;
+
+            const sysPrompt = `Bạn là Giáo sư Y khoa đầu ngành đang giải đáp thắc mắc sau khi đã đánh giá bài làm của học viên.
+Phong cách: nghiêm khắc, học thuật, trả lời trực tiếp không vòng vo, không khen ngợi câu hỏi.
+Trả lời súc tích nhưng đầy đủ và chính xác về mặt y khoa. Dùng tiếng Việt chuyên nghiệp. Định dạng Markdown.`;
+
+            const messages = [
+                { role: 'system', content: sysPrompt },
+                { role: 'user',   content: `CA BỆNH:\n${JSON.stringify(currentCaseData, null, 2)}\n\nBÀI LÀM HỌC VIÊN:\n${userDiagnosis}` },
+                { role: 'assistant', content: initialEvaluation },
+            ];
+            followUpHistory.forEach(h => {
+                messages.push({ role: 'user',      content: h.q });
+                messages.push({ role: 'assistant', content: h.a });
+            });
+            messages.push({ role: 'user', content: q });
+
+            try {
+                const data = await apiCall(messages, { temperature: 0.65 });
+                if (data.choices?.[0]?.message?.content) {
+                    const ans = data.choices[0].message.content;
+                    followUpHistory.push({ q, a: ans });
+                    followUpRemaining--;
+
+                    const qNum = 4 - followUpRemaining;
+                    const pair = document.createElement('div');
+                    pair.className = 'p-4';
+                    pair.innerHTML = `
+                        <div class="mb-3">
+                            <p class="text-xs font-semibold text-violet-600 uppercase tracking-wider mb-1.5">
+                                <i class="fas fa-user-graduate mr-1"></i> Học viên — Câu hỏi ${qNum}
+                            </p>
+                            <div class="text-sm text-slate-700 bg-violet-50 border border-violet-100 rounded-lg p-3 leading-relaxed">${q.replace(/\n/g,'<br>')}</div>
+                        </div>
+                        <div>
+                            <p class="text-xs font-semibold text-emerald-600 uppercase tracking-wider mb-1.5">
+                                <i class="fas fa-chalkboard-teacher mr-1"></i> Giáo sư
+                            </p>
+                            <div class="markdown-body text-sm bg-emerald-50 border border-emerald-100 rounded-lg p-3">${marked.parse(ans)}</div>
+                        </div>`;
+                    elFollowupHistory.appendChild(pair);
+                    elFollowupInput.value = '';
+                    updateCounter();
+
+                    if (followUpRemaining <= 0) {
+                        elFollowupArea.classList.add('hidden');
+                        elFollowupDone.classList.remove('hidden');
+                    }
+                    pair.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                } else throw new Error('Invalid follow-up response.');
+            } catch (e) {
+                console.error(e);
+                showToast('Lỗi khi kết nối. Vui lòng thử lại.');
+            } finally {
+                $('followup-icon').className = 'fas fa-paper-plane text-sm';
+                $('followup-spinner').classList.add('hidden');
+                elBtnFollowup.disabled = false;
+                elFollowupInput.disabled = false;
+            }
+        }
+
+        // ===== Reset to Welcome =====
+        function resetToWelcome() {
+            currentCaseData = null;
+            userDiagnosis = '';
+            initialEvaluation = '';
+            followUpHistory = [];
+            followUpRemaining = 3;
+            elDoctorInput.value = '';
+            elEvalResult.classList.add('hidden');
+            elFollowupSection.classList.add('hidden');
+            elPatient.classList.add('hidden');
+            elWelcome.classList.remove('hidden');
+            elWorkspace.classList.add('opacity-50', 'pointer-events-none');
+        }
+
+        // ===== Events =====
+        elBtnStart.addEventListener('click', generateClinicalCase);
+        elBtnNav.addEventListener('click', resetToWelcome);
+        elBtnSubmit.addEventListener('click', submitDiagnosis);
+        elBtnFollowup.addEventListener('click', submitFollowUp);
+        elFollowupInput.addEventListener('keydown', e => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submitFollowUp();
+        });
+
+        // ===== Init =====
+        marked.setOptions({ breaks: true, gfm: true });
+        renderTopics();
+        renderDifficulties();
+    </script>
+</body>
+</html>
